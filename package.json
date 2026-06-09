@@ -1,0 +1,32 @@
+{
+  "name": "pi-face",
+  "version": "0.1.0",
+  "description": "Interactive ASCII face widget with live context and cost stats",
+  "type": "module",
+  "main": "index.ts",
+  "license": "MIT",
+  "keywords": [
+    "pi-extension",
+    "pi-package",
+    "avatar",
+    "emote",
+    "tui",
+    "status",
+    "cost"
+  ],
+  "files": [
+    "index.ts",
+    "src",
+    "emotes",
+    "config.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}

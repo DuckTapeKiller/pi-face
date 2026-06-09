@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "size": 10,
+  "hideBelow": 70,
+  "color": true,
+  "readingSpeed": 4,
+  "talkTickMs": 120,
+  "cycleMs": 450,
+  "holdMs": {
+    "hi": 1600,
+    "success": 1000,
+    "failure": 1200
+  },
+  "blinkMs": [2800, 5600],
+  "emotes": [
+    { "model": "*", "set": "default" },
+    { "model": "*cat*", "set": "cat" }
+  ]
+}

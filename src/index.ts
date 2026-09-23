@@ -244,9 +244,67 @@ function formatThinkingLevel(level: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
+const GPT_LUNA_MODEL_ID = "gpt-5.6-luna";
+const GPT_LUNA_LONG_CONTEXT_THRESHOLD = 272_000;
+const GPT_LUNA_RATES = {
+  input: 0.2,
+  cacheRead: 0.02,
+  cacheWrite: 0.25,
+  output: 1.2,
+  longInput: 0.4,
+  longCacheRead: 0.04,
+  longCacheWrite: 0.5,
+  longOutput: 1.8,
+};
+
+function modelIdFromMessage(message: any): string | undefined {
+  if (typeof message?.model === "string") return message.model;
+  if (typeof message?.model?.id === "string") return message.model.id;
+  return undefined;
+}
+
+function directOpenAiLunaCost(message: any): CostResult | null {
+  const provider = typeof message?.provider === "string" ? message.provider.toLowerCase() : "";
+  if (provider !== "openai" || modelIdFromMessage(message) !== GPT_LUNA_MODEL_ID) return null;
+
+  const usage = message?.usage;
+  if (!usage) return { amount: 0, source: "unavailable" };
+  const toNumber = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  const input = toNumber(usage.input);
+  const output = toNumber(usage.output);
+  const cacheRead = toNumber(usage.cacheRead);
+  const cacheWrite = toNumber(usage.cacheWrite);
+  const longContext = input + cacheRead + cacheWrite > GPT_LUNA_LONG_CONTEXT_THRESHOLD;
+  const rates = longContext
+    ? {
+        input: GPT_LUNA_RATES.longInput,
+        cacheRead: GPT_LUNA_RATES.longCacheRead,
+        cacheWrite: GPT_LUNA_RATES.longCacheWrite,
+        output: GPT_LUNA_RATES.longOutput,
+      }
+    : GPT_LUNA_RATES;
+  const amount = (
+    input * rates.input +
+    cacheRead * rates.cacheRead +
+    cacheWrite * rates.cacheWrite +
+    output * rates.output
+  ) / 1_000_000;
+
+  return {
+    amount: Math.max(0, amount),
+    source: "computed",
+  };
+}
+
 function extractCostFromMessage(message: any, modelRegistry: any, activeModel?: any): CostResult {
   const usage = message?.usage;
   if (!usage) return { amount: 0, source: "unavailable" };
+
+  // Pi's native total is derived from its model registry. Override it for direct
+  // OpenAI GPT-5.6 Luna so a stale registry cannot report the old $1/$6 rates.
+  const directLuna = directOpenAiLunaCost(message);
+  if (directLuna) return directLuna;
+
   const costTotal = usage.cost?.total;
   if (typeof costTotal === "number" && Number.isFinite(costTotal)) {
     return {
@@ -256,9 +314,7 @@ function extractCostFromMessage(message: any, modelRegistry: any, activeModel?: 
   }
 
   const provider = typeof message?.provider === "string" ? message.provider : undefined;
-  const modelId = typeof message?.model === "string"
-    ? message.model
-    : (typeof message?.model?.id === "string" ? message.model.id : undefined);
+  const modelId = modelIdFromMessage(message);
 
   let model: any = activeModel;
   if ((!model || !model.cost) && provider && modelId && modelRegistry?.find) {
@@ -328,10 +384,21 @@ function sumCostFromBranch(sessionManager: any, modelRegistry: any, activeModel?
   let sum = 0;
   let source: CostStats["source"] = fallbackSource;
   for (const entry of entries) {
-    if (entry?.type !== "message") continue;
-    const message = entry.message;
-    if (!message || message.role !== "assistant") continue;
-    const cost = extractCostFromMessage(message, modelRegistry, activeModel);
+    let cost: CostResult | null = null;
+    if (entry?.type === "message") {
+      const message = entry.message;
+      if (!message || message.role !== "assistant") continue;
+      cost = extractCostFromMessage(message, modelRegistry, activeModel);
+    } else if ((entry?.type === "compaction" || entry?.type === "branch_summary") && entry.usage) {
+      // Compaction and branch-summary calls can also consume paid model tokens.
+      // They do not carry provider/model fields, so use the active model context.
+      cost = extractCostFromMessage({
+        usage: entry.usage,
+        provider: activeModel?.provider,
+        model: activeModel?.id,
+      }, modelRegistry, activeModel);
+    }
+    if (!cost) continue;
     sum += cost.amount;
     source = combineCostSources(source, cost.source);
   }
@@ -434,6 +501,7 @@ export default function piFace(pi: ExtensionAPI) {
   pi.on("model_select", async (event: any) => {
     activeModel = event.model ?? activeModel;
     modelName = event.model?.name ?? modelName;
+    lastCost = 0;
     costSource = inferZeroCostSource(undefined, ctxRef?.modelRegistry, activeModel);
     refreshConfigAndPersona(event.model?.id ?? "");
     if (config.enabled && animator.state === "idle") animator.transition("idle");

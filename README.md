@@ -12,7 +12,7 @@ It keeps the runtime minimal and self-contained:
 The widget shows:
 - an ASCII persona face paired with the current model name
 - a compact, theme-colored status panel for agent state, CIX usage, cost, and thinking level
-- native Pi cost totals when available; local zero-cost models are shown as `Local`
+- provider-aware cost totals; direct OpenAI GPT-5.6 Luna usage is calculated with the current official rates, and local zero-cost models are shown as `Local`
 
 ## Install
 
@@ -70,6 +70,10 @@ Example:
   ]
 }
 ```
+
+## Cost calculation notes
+
+For direct OpenAI usage with model `gpt-5.6-luna`, costs are calculated locally using the standard rates of $0.20 per 1M input tokens, $0.02 per 1M cached input tokens, $0.25 per 1M cache-write tokens, and $1.20 per 1M output tokens. Requests above 272K input tokens use the documented long-context rates. This override prevents a stale Pi model registry from supplying the old $1/$6 rates. Gateway providers, service-tier surcharges or discounts, regional-processing uplifts, and provider billing adjustments may differ.
 
 ## Security notes
 
